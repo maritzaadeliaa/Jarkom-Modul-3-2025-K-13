@@ -581,3 +581,293 @@ grep lease /var/lib/dhcp/dhclient.leases | tail -5
 Harus muncul 600.
 
 
+
+### Soal 11
+Musuh mencoba menguji kekuatan pertahanan Númenor. Dari node client, luncurkan serangan benchmark (ab) ke elros.<xxxx>.com/api/airing/:
+  - Serangan Awal: -n 100 -c 10 (100 permintaan, 10 bersamaan).
+  - Serangan Penuh: -n 2000 -c 100 (2000 permintaan, 100 bersamaan). Pantau kondisi para worker dan periksa log Elros untuk melihat apakah ada worker yang kewalahan atau koneksi yang gagal.
+  - Strategi Bertahan: Tambahkan weight dalam algoritma, kemudian catat apakah lebih baik atau tidak.
+
+
+Berdasarkan isi file aldarion-dhcp-setup.sh dan soal2.sh, server menjalankan isc-dhcp-server dengan file /etc/dhcp/dhcpd.conf
+
+```
+authoritative;
+option domain-name "K13.com";
+option domain-name-servers 192.168.122.1;
+
+# Subnet Keluarga Manusia
+subnet 10.70.1.0 netmask 255.255.255.0 {
+  range 10.70.1.6 10.70.1.34;
+  range 10.70.1.68 10.70.1.94;
+  option routers 10.70.1.1;
+  default-lease-time 1800;   # 30 menit
+  max-lease-time 3600;       # 1 jam
+}
+
+# Subnet Keluarga Peri
+subnet 10.70.2.0 netmask 255.255.255.0 {
+  range 10.70.2.35 10.70.2.67;
+  range 10.70.2.96 10.70.2.121;
+  option routers 10.70.2.1;
+  default-lease-time 600;    # 10 menit (1/6 jam)
+  max-lease-time 3600;
+}
+
+# Fixed address Khamul
+host khamul {
+  hardware ethernet XX:XX:XX:XX:XX:XX;   # MAC Khamul
+  fixed-address 10.70.3.95;
+}
+```
+
+Authoritative berfungsi untuk menandakan ini server DHCP resmi untuk jaringan itu. Option domain name servers merupakan DNS default diberikan ke client. Default lease time merupakan lama peminjaman awal.
+Max lease time adalah batas maksimum. 
+
+Client Manusia atau Peri mengirim permintaan DHCP DISCOVER ke Durin, lalu Durin meneruskan relay ke Aldarion, Aldarion menjawab dengan IP sesuai subnet lalu Client menerima IP dan DNS 192.168.122.1.
+Terakhir Khamul akan mendapat 10.70.3.95 karena ada entri fixed-address. Setelah itu verifikasi di Aldarion, Client, dan Durin
+
+```
+# Aldarion
+
+systemctl status isc-dhcp-server
+tail -f /var/log/syslog | grep dhcp
+```
+
+```
+# Client
+
+ip addr
+cat /etc/resolv.conf
+```
+
+```
+# Durin
+
+journalctl -u isc-dhcp-relay -e
+```
+
+
+### Soal 12
+Para Penguasa Peri (Galadriel, Celeborn, Oropher) membangun taman digital mereka menggunakan PHP. Instal nginx dan php8.4-fpm di setiap node worker PHP. Buat file index.php sederhana di /var/www/html masing-masing yang menampilkan nama hostname mereka. Buat agar akses web hanya bisa melalui domain nama, tidak bisa melalui ip.
+
+Membuat sistem DNS dengan node Erendis untuk Menyimpan konfigurasi utama zone K13.com dan dapat melakukan zone transfer ke slave, node Amdir untuk menyalin replica zone dari master dan menjawab query jika master down, dan Minastir untuk meneruskan query eksternal ke DNS global
+
+Konfigurasi Erendis
+
+```
+zone "K13.com" {
+    type master;
+    file "/etc/bind/K13/K13.com";
+    allow-transfer { 10.70.4.22; };   # IP Amdir (slave)
+};
+
+zone "43.70.10.in-addr.arpa" {
+    type master;
+    file "/etc/bind/K13/43.70.10.in-addr.arpa";
+    allow-transfer { 10.70.4.22; };
+};
+```
+
+```
+$TTL 604800
+@   IN SOA  ns1.K13.com. root.K13.com. (
+        2025110501 ; serial (format: YYYYMMDDnn)
+        604800     ; refresh
+        86400      ; retry
+        2419200    ; expire
+        604800 )   ; minimum
+
+; Nameserver
+@       IN NS ns1.K13.com.
+@       IN NS ns2.K13.com.
+
+; Address records
+ns1     IN A 10.70.3.3
+ns2     IN A 10.70.4.22
+palantir IN A 10.70.4.20
+elros    IN A 10.70.3.10
+pharazon IN A 10.70.4.30
+elendil  IN A 10.70.1.10
+isildur  IN A 10.70.1.11
+anarion  IN A 10.70.1.12
+galadriel IN A 10.70.2.10
+celeborn  IN A 10.70.2.11
+oropher   IN A 10.70.2.12
+
+; Alias
+www     IN CNAME K13.com.
+
+; TXT records
+@   IN TXT "Cincin Sauron = elros.K13.com"
+@   IN TXT "Aliansi Terakhir = pharazon.K13.com"
+```
+Ini untuk file zone foward
+
+
+```
+$TTL 604800
+@   IN SOA  ns1.K13.com. root.K13.com. (
+        2025110501
+        604800
+        86400
+        2419200
+        604800 )
+@       IN NS ns1.K13.com.
+@       IN NS ns2.K13.com.
+
+3       IN PTR ns1.K13.com.
+22      IN PTR ns2.K13.com.
+```
+
+Ini untuk file zone reverse
+
+
+
+Konfigurasi Amdir
+
+
+```
+zone "K13.com" {
+    type slave;
+    masters { 10.70.3.3; };  # IP Erendis
+    file "/var/cache/bind/K13.com";
+};
+
+zone "43.70.10.in-addr.arpa" {
+    type slave;
+    masters { 10.70.3.3; };
+    file "/var/cache/bind/43.70.10.in-addr.arpa";
+};
+```
+
+
+Konfigurasi Minastir
+
+```
+options {
+    directory "/var/cache/bind";
+    forwarders {
+        192.168.122.1;
+    };
+    allow-query { any; };
+    recursion yes;
+};
+```
+
+
+
+### Soal 14
+Keamanan adalah prioritas. Terapkan Basic HTTP Authentication pada nginx di setiap worker PHP, sehingga hanya mereka yang tahu kata sandi (user: noldor, pass: silvan) yang bisa masuk.
+
+Membangun tiga server aplikasi Laravel dengan konfigurasi berbeda, lalu memastikan semuanya bisa berfungsi dan terhubung ke database Palantir yang ketiga server tersebut merupakan Elendil (port 8001), Isildur (port 8002), dan Anarion (port 8003).
+
+Konfigurasi file .env agar semua worker terhubung ke Palantir
+
+
+```
+APP_NAME=Laravel
+APP_ENV=local
+APP_KEY=
+APP_DEBUG=true
+APP_URL=http://localhost
+
+LOG_CHANNEL=stack
+
+DB_CONNECTION=mysql
+DB_HOST=10.70.4.20
+DB_PORT=3306
+DB_DATABASE=laravel
+DB_USERNAME=root
+DB_PASSWORD=
+
+# (jika Palantir diberi user/password khusus, sesuaikan di sini)
+```
+
+
+Konfigurasi Nginx untuk masing-masing worker
+
+
+```
+# Elendir
+
+server {
+    listen 8001;
+    server_name elendil.K13.com;
+
+    root /var/www/app/public;
+    index index.php index.html;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    # hanya izinkan domain tertentu
+    if ($host !~* ^elendil\.K13\.com$) {
+        return 444;
+    }
+}
+```
+
+
+```
+# Isildur
+
+server {
+    listen 8002;
+    server_name isildur.K13.com;
+
+    root /var/www/app/public;
+    index index.php index.html;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    if ($host !~* ^isildur\.K13\.com$) {
+        return 444;
+    }
+}
+```
+
+
+```
+# Anarion
+
+server {
+    listen 8003;
+    server_name anarion.K13.com;
+
+    root /var/www/app/public;
+    index index.php index.html;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    if ($host !~* ^anarion\.K13\.com$) {
+        return 444;
+    }
+}
+```
