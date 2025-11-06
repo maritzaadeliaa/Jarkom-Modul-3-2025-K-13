@@ -1353,3 +1353,56 @@ server {
     }
 }
 ```
+
+
+### Soal 15
+
+
+Membuat Load Balancer (LB) dengan algoritma Round Robin untuk mendistribusikan permintaan pengguna ke tiga Laravel worker
+
+Konfigurasi Elros
+
+
+```
+# Upstream group untuk Laravel workers
+upstream kesatria_numenor {
+    server 10.70.1.10:8001;  # Elendil
+    server 10.70.1.11:8002;  # Isildur
+    server 10.70.1.12:8003;  # Anarion
+}
+
+# Server block untuk domain Elros
+server {
+    listen 80;
+    server_name elros.K13.com;
+
+    location / {
+        proxy_pass http://kesatria_numenor;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+
+Load Balancing Test
+
+
+```
+ab -n 100 -c 10 http://elros.K13.com/api/airing/
+```
+
+
+Defense Strategy
+
+
+```
+upstream kesatria_numenor {
+    server 10.70.1.10:8001 weight=3;  # Elendil lebih kuat
+    server 10.70.1.11:8002 weight=1;
+    server 10.70.1.12:8003 weight=1;
+}
+```
+
+
