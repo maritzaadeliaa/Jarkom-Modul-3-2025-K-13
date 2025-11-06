@@ -68,6 +68,7 @@ ping -c 3 google.com || echo "Ping google.com gagal (cek DNS/resolver)" # fallba
 ```
 ### Setup Client (sesuaikan add dengan prefix ip tiap subnet)
 Miriel:
+
 ![1](assets/soal1-miriel.jpg)
 ```bash
 ip link set eth0 up                               # up interface
@@ -79,6 +80,7 @@ ping -c 2 8.8.8.8; ping -c 2 google.com          # tes IP & DNS
 ```
 
 Gilgalad:
+
 ![1](assets/soal1-gilgalad.jpg)
 ```bash
 ip link set eth0 up
@@ -107,6 +109,7 @@ echo "nameserver 192.168.122.1" > /etc/resolv.conf
 ping -c 2 8.8.8.8; ping -c 2 google.com
 ```
 Aldarion:
+
 ![1](assets/soal1-aldarion.jpg)
 ```bash
 ip link set eth0 up
@@ -204,6 +207,7 @@ subnet 10.70.5.0 netmask 255.255.255.0 { } # PHP segmen, no DHCP
 ```
 
 Durin:
+
 ![2](assets/soal2-durin.jpg)
 ```bash
 apt update
@@ -221,6 +225,7 @@ service isc-dhcp-relay status
 ps aux | grep dhcp
 ```
 Gilgalad:
+
 ![2](assets/soal2-gilgalad.jpg)
 
 ```bash
@@ -237,10 +242,18 @@ dhclient eth0
 ip a
 ```
 
-Miriel, Amandil, Celebrimbor:
+Miriel:
+
 ![2](assets/soal2-miriel.jpg)
+
+Amandil:
+
 ![2](assets/soal2-amandil.jpg)
+
+Celebrimbor:
+
 ![2](assets/soal2-celebrimbor.jpg)
+
 ```bash
 apt update
 apt install isc-dhcp-client -y
@@ -471,7 +484,6 @@ options {
 };
 ```
 ![4](assets/soal4-amdir.jpg)
-![4](assets/soal4-amdir2.jpg)
 ![4](assets/soal4-amdir3.jpg)
 ```bash
 named -4 -g -u bind -c /etc/bind/named.conf
