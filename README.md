@@ -264,6 +264,39 @@ ip a
 ```
 
 ### Soal 3
+3.	Untuk mengontrol arus informasi ke dunia luar (Valinor/Internet), sebuah menara pengawas, Minastir didirikan. Minastir mengatur agar semua node (kecuali Durin) hanya dapat mengirim pesan ke luar Arda setelah melewati pemeriksaan di Minastir.
+
+```bash
+apt-get update
+apt-get install -y dnsmasq
+
+nano /etc/dnsmasq.conf
+```
+isi:
+```bash
+no-resolv
+server=192.168.122.1
+listen-address=10.70.5.20
+```
+
+Restart dnsmasq
+```bash
+pkill dnsmasq
+dnsmasq
+```
+Cek apakah sudah aktif:
+```bash
+ps aux | grep dnsmasq
+```
+Pada setiap node non-router (kecuali Durin), jalankan:
+```bash
+echo "nameserver 10.70.5.20" > /etc/resolv.conf
+```
+cek:
+```bash
+ping -c 2 google.com
+
+```
 
 ### Soal 4
 4.	Ratu Erendis, sang pembuat peta, menetapkan nama resmi untuk wilayah utama (<xxxx>.com). Ia menunjuk dirinya (ns1.<xxxx>.com) dan muridnya Amdir (ns2.<xxxx>.com) sebagai penjaga peta resmi. Setiap lokasi penting (Palantir, Elros, Pharazon, Elendil, Isildur, Anarion, Galadriel, Celeborn, Oropher) diberikan nama domain unik yang menunjuk ke lokasi fisik tanah mereka. Pastikan Amdir selalu menyalin peta (master-slave) dari Erendis dengan setia.
@@ -601,7 +634,435 @@ grep lease /var/lib/dhcp/dhclient.leases | tail -5
 ```
 Harus muncul 600.
 
+### Soal 7
+7.	Para Ksatria Númenor (Elendil, Isildur, Anarion) mulai membangun benteng pertahanan digital mereka menggunakan teknologi Laravel. Instal semua tools yang dibutuhkan (php8.4, composer, nginx) dan dapatkan cetak biru benteng dari Resource-laravel di setiap node worker Laravel. Cek dengan lynx di client.
 
+```bash
+#!/bin/bash
+set -e
+
+# ==== GANTI INI PER NODE ====
+SERVER_NAME="elendil.K13.com"   # elendil.K13.com / isildur.K13.com / anarion.K13.com
+
+apt update
+apt install -y ca-certificates lsb-release apt-transport-https curl gnupg git unzip nginx
+
+# PHP 8.4 (repo Sury)
+curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/sury.gpg
+echo "deb [signed-by=/usr/share/keyrings/sury.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/sury-php.list
+apt update
+apt install -y php8.4 php8.4-fpm php8.4-cli php8.4-mbstring php8.4-xml php8.4-curl php8.4-zip php8.4-mysql
+
+# Composer
+php -r "copy('https://getcomposer.org/installer','composer-setup.php')"
+php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+rm composer-setup.php
+
+# Ambil blueprint Laravel
+mkdir -p /var/www/laravel && cd /var/www/laravel
+[ -d laravel-simple-rest-api ] || git clone https://github.com/elshiraphine/laravel-simple-rest-api
+cd laravel-simple-rest-api
+
+# Install minimal biar halaman tampil
+composer install --no-interaction || true
+cp .env.example .env || true
+php artisan key:generate || true
+
+# Permission
+chown -R www-data:www-data /var/www/laravel/laravel-simple-rest-api
+chmod -R 775 storage bootstrap/cache
+
+# Nginx vhost (port 80)
+cat >/etc/nginx/sites-available/laravel.conf <<EOF
+server {
+    listen 80;
+    server_name ${SERVER_NAME};
+
+    root /var/www/laravel/laravel-simple-rest-api/public;
+    index index.php index.html;
+    error_log /var/log/nginx/error.log;
+
+    location / { try_files \$uri \$uri/ /index.php?\$query_string; }
+    location ~ \.php\$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+    }
+}
+EOF
+
+ln -sf /etc/nginx/sites-available/laravel.conf /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+
+# Start/restart tanpa systemctl
+pkill php-fpm8.4 2>/dev/null || true
+mkdir -p /run/php
+php-fpm8.4 -D
+
+pkill nginx 2>/dev/null || true
+nginx -t
+nginx
+
+echo "[OK] ${SERVER_NAME} siap di port 80"
+```
+
+Cek dari client (lynx)
+```bash
+lynx http://elendl.K13.com
+lynx http://isildur.K13.com
+lynx http://anarion.K13.com
+```
+
+### Soal 8
+8.	Setiap benteng Númenor harus terhubung ke sumber pengetahuan, Palantir. Konfigurasikan koneksi database di file .env masing-masing worker. Setiap benteng juga harus memiliki gerbang masuk yang unik; atur nginx agar Elendil mendengarkan di port 8001, Isildur di 8002, dan Anarion di 8003. Jangan lupa jalankan migrasi dan seeding awal dari Elendil. Buat agar akses web hanya bisa melalui domain nama, tidak bisa melalui ip.
+
+Elendil:
+```bash
+#!/bin/bash
+set -e
+
+SERVER_NAME="elendil.K13.com"
+APP_PORT="8001"
+
+DB_HOST="10.70.4.20"
+DB_NAME="palantir_db"
+DB_USER="palantir_user"
+DB_PASS="palantir_pass"
+
+apt update
+apt install -y ca-certificates lsb-release apt-transport-https curl gnupg git unzip nginx
+
+# PHP 8.4 (Sury)
+curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/sury.gpg
+echo "deb [signed-by=/usr/share/keyrings/sury.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" >/etc/apt/sources.list.d/sury-php.list
+apt update
+apt install -y php8.4 php8.4-fpm php8.4-cli php8.4-mbstring php8.4-xml php8.4-curl php8.4-zip php8.4-mysql
+
+# Composer
+php -r "copy('https://getcomposer.org/installer','composer-setup.php')"
+php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+rm composer-setup.php
+
+# Ambil Laravel
+mkdir -p /var/www/laravel && cd /var/www/laravel
+[ -d laravel-simple-rest-api ] || git clone https://github.com/elshiraphine/laravel-simple-rest-api
+cd laravel-simple-rest-api
+
+composer install --no-interaction || true
+cp .env.example .env || true
+php artisan key:generate || true
+
+# .env koneksi DB + URL
+sed -i "s|^APP_URL=.*|APP_URL=http://${SERVER_NAME}:${APP_PORT}|" .env
+sed -i "s|^DB_CONNECTION=.*|DB_CONNECTION=mysql|" .env
+sed -i "s|^DB_HOST=.*|DB_HOST=${DB_HOST}|" .env
+sed -i "s|^DB_PORT=.*|DB_PORT=3306|" .env
+sed -i "s|^DB_DATABASE=.*|DB_DATABASE=${DB_NAME}|" .env
+sed -i "s|^DB_USERNAME=.*|DB_USERNAME=${DB_USER}|" .env
+sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_PASS}|" .env
+
+chown -R www-data:www-data /var/www/laravel/laravel-simple-rest-api
+chmod -R 775 storage bootstrap/cache
+
+# Nginx: block akses via IP, hanya domain
+cat >/etc/nginx/sites-available/${APP_PORT}-default.conf <<EOF
+server { listen ${APP_PORT} default_server; return 403; }
+EOF
+
+cat >/etc/nginx/sites-available/${SERVER_NAME}.conf <<'EOF'
+server {
+    listen APP_PORT_HERE;
+    server_name SERVER_NAME_HERE;
+
+    root /var/www/laravel/laravel-simple-rest-api/public;
+    index index.php index.html;
+    error_log /var/log/nginx/error.log;
+
+    # Tolak jika akses pakai IP langsung
+    if ($host ~* "^[0-9.]+$") { return 403; }
+
+    location / { try_files $uri $uri/ /index.php?$query_string; }
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+    }
+}
+EOF
+sed -i "s|APP_PORT_HERE|${APP_PORT}|g" /etc/nginx/sites-available/${SERVER_NAME}.conf
+sed -i "s|SERVER_NAME_HERE|${SERVER_NAME}|g" /etc/nginx/sites-available/${SERVER_NAME}.conf
+
+ln -sf /etc/nginx/sites-available/${APP_PORT}-default.conf /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/${SERVER_NAME}.conf /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+
+# Start tanpa systemctl
+pkill php-fpm8.4 2>/dev/null || true
+mkdir -p /run/php
+php-fpm8.4 -D
+
+pkill nginx 2>/dev/null || true
+nginx -t
+nginx
+
+# Migrasi + seeding HANYA di Elendil
+php artisan migrate --seed
+
+echo "[OK] ${SERVER_NAME} jalan di :${APP_PORT} (domain-only). DB: ${DB_HOST}"
+```
+
+Isildur:
+```bash
+#!/bin/bash
+set -e
+
+SERVER_NAME="isildur.K13.com"
+APP_PORT="8002"
+
+DB_HOST="10.70.4.20"
+DB_NAME="palantir_db"
+DB_USER="palantir_user"
+DB_PASS="palantir_pass"
+
+apt update
+apt install -y ca-certificates lsb-release apt-transport-https curl gnupg git unzip nginx
+curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/sury.gpg
+echo "deb [signed-by=/usr/share/keyrings/sury.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" >/etc/apt/sources.list.d/sury-php.list
+apt update
+apt install -y php8.4 php8.4-fpm php8.4-cli php8.4-mbstring php8.4-xml php8.4-curl php8.4-zip php8.4-mysql
+
+php -r "copy('https://getcomposer.org/installer','composer-setup.php')"
+php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+rm composer-setup.php
+
+mkdir -p /var/www/laravel && cd /var/www/laravel
+[ -d laravel-simple-rest-api ] || git clone https://github.com/elshiraphine/laravel-simple-rest-api
+cd laravel-simple-rest-api
+
+composer install --no-interaction || true
+cp .env.example .env || true
+php artisan key:generate || true
+
+sed -i "s|^APP_URL=.*|APP_URL=http://${SERVER_NAME}:${APP_PORT}|" .env
+sed -i "s|^DB_CONNECTION=.*|DB_CONNECTION=mysql|" .env
+sed -i "s|^DB_HOST=.*|DB_HOST=${DB_HOST}|" .env
+sed -i "s|^DB_PORT=.*|DB_PORT=3306|" .env
+sed -i "s|^DB_DATABASE=.*|DB_DATABASE=${DB_NAME}|" .env
+sed -i "s|^DB_USERNAME=.*|DB_USERNAME=${DB_USER}|" .env
+sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_PASS}|" .env
+
+chown -R www-data:www-data /var/www/laravel/laravel-simple-rest-api
+chmod -R 775 storage bootstrap/cache
+
+cat >/etc/nginx/sites-available/${APP_PORT}-default.conf <<EOF
+server { listen ${APP_PORT} default_server; return 403; }
+EOF
+cat >/etc/nginx/sites-available/${SERVER_NAME}.conf <<'EOF'
+server {
+    listen APP_PORT_HERE;
+    server_name SERVER_NAME_HERE;
+
+    root /var/www/laravel/laravel-simple-rest-api/public;
+    index index.php index.html;
+    error_log /var/log/nginx/error.log;
+
+    if ($host ~* "^[0-9.]+$") { return 403; }
+
+    location / { try_files $uri $uri/ /index.php?$query_string; }
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+    }
+}
+EOF
+sed -i "s|APP_PORT_HERE|${APP_PORT}|g" /etc/nginx/sites-available/${SERVER_NAME}.conf
+sed -i "s|SERVER_NAME_HERE|${SERVER_NAME}|g" /etc/nginx/sites-available/${SERVER_NAME}.conf
+
+ln -sf /etc/nginx/sites-available/${APP_PORT}-default.conf /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/${SERVER_NAME}.conf /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+
+pkill php-fpm8.4 2>/dev/null || true
+mkdir -p /run/php
+php-fpm8.4 -D
+
+pkill nginx 2>/dev/null || true
+nginx -t
+nginx
+
+echo "[OK] ${SERVER_NAME} jalan di :${APP_PORT} (domain-only). DB: ${DB_HOST}"
+```
+
+Anarion:
+```bash
+#!/bin/bash
+set -e
+
+SERVER_NAME="anarion.K13.com"
+APP_PORT="8003"
+
+DB_HOST="10.70.4.20"
+DB_NAME="palantir_db"
+DB_USER="palantir_user"
+DB_PASS="palantir_pass"
+
+apt update
+apt install -y ca-certificates lsb-release apt-transport-https curl gnupg git unzip nginx
+curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/sury.gpg
+echo "deb [signed-by=/usr/share/keyrings/sury.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" >/etc/apt/sources.list.d/sury-php.list
+apt update
+apt install -y php8.4 php8.4-fpm php8.4-cli php8.4-mbstring php8.4-xml php8.4-curl php8.4-zip php8.4-mysql
+
+php -r "copy('https://getcomposer.org/installer','composer-setup.php')"
+php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+rm composer-setup.php
+
+mkdir -p /var/www/laravel && cd /var/www/laravel
+[ -d laravel-simple-rest-api ] || git clone https://github.com/elshiraphine/laravel-simple-rest-api
+cd laravel-simple-rest-api
+
+composer install --no-interaction || true
+cp .env.example .env || true
+php artisan key:generate || true
+
+sed -i "s|^APP_URL=.*|APP_URL=http://${SERVER_NAME}:${APP_PORT}|" .env
+sed -i "s|^DB_CONNECTION=.*|DB_CONNECTION=mysql|" .env
+sed -i "s|^DB_HOST=.*|DB_HOST=${DB_HOST}|" .env
+sed -i "s|^DB_PORT=.*|DB_PORT=3306|" .env
+sed -i "s|^DB_DATABASE=.*|DB_DATABASE=${DB_NAME}|" .env
+sed -i "s|^DB_USERNAME=.*|DB_USERNAME=${DB_USER}|" .env
+sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_PASS}|" .env
+
+chown -R www-data:www-data /var/www/laravel/laravel-simple-rest-api
+chmod -R 775 storage bootstrap/cache
+
+cat >/etc/nginx/sites-available/${APP_PORT}-default.conf <<EOF
+server { listen ${APP_PORT} default_server; return 403; }
+EOF
+cat >/etc/nginx/sites-available/${SERVER_NAME}.conf <<'EOF'
+server {
+    listen APP_PORT_HERE;
+    server_name SERVER_NAME_HERE;
+
+    root /var/www/laravel/laravel-simple-rest-api/public;
+    index index.php index.html;
+    error_log /var/log/nginx/error.log;
+
+    if ($host ~* "^[0-9.]+$") { return 403; }
+
+    location / { try_files $uri $uri/ /index.php?$query_string; }
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+    }
+}
+EOF
+sed -i "s|APP_PORT_HERE|${APP_PORT}|g" /etc/nginx/sites-available/${SERVER_NAME}.conf
+sed -i "s|SERVER_NAME_HERE|${SERVER_NAME}|g" /etc/nginx/sites-available/${SERVER_NAME}.conf
+
+pkill php-fpm8.4 2>/dev/null || true
+mkdir -p /run/php
+php-fpm8.4 -D
+
+pkill nginx 2>/dev/null || true
+nginx -t
+nginx
+
+echo "[OK] ${SERVER_NAME} jalan di :${APP_PORT} (domain-only). DB: ${DB_HOST}"
+```
+
+### Soal 9
+9.	Pastikan setiap benteng berfungsi secara mandiri. Dari dalam node client masing-masing, gunakan lynx untuk melihat halaman utama Laravel dan curl /api/airing untuk memastikan mereka bisa mengambil data dari Palantir.
+
+Dari node client (contoh: Miriel/Gilgalad/Celebrimbor)
+Cek halaman utama Laravel
+```bash
+# Elendil (port 8001)
+lynx http://elendil.K13.com:8001
+
+# Isildur (port 8002)
+lynx http://isildur.K13.com:8002
+
+# Anarion (port 8003)
+lynx http://anarion.K13.com:8003
+
+```
+Cek endpoint data ke Palantir
+```bash
+# Elendil
+curl -i http://elendil.K13.com:8001/api/airing
+
+# Isildur
+curl -i http://isildur.K13.com:8002/api/airing
+
+# Anarion
+curl -i http://anarion.K13.com:8003/api/airing
+```
+
+### Soal 10
+10.	Pemimpin bijak Elros ditugaskan untuk mengkoordinasikan pertahanan Númenor. Konfigurasikan nginx di Elros untuk bertindak sebagai reverse proxy. Buat upstream bernama kesatria_numenor yang berisi alamat ketiga worker (Elendil, Isildur, Anarion). Atur agar semua permintaan yang datang ke domain elros.<xxxx>.com diteruskan secara merata menggunakan algoritma Round Robin ke backend.
+    
+Elros:
+```bash
+#!/bin/bash
+set -e
+
+apt update
+apt install -y nginx
+
+# === Nginx upstream + vhost elros ===
+cat >/etc/nginx/conf.d/kesatria_numenor.conf <<'EOF'
+upstream kesatria_numenor {
+    # Round Robin by default
+    server 10.70.1.10:8001;   # elendil
+    server 10.70.1.11:8002;   # isildur
+    server 10.70.1.12:8003;   # anarion
+    keepalive 32;
+}
+EOF
+
+cat >/etc/nginx/sites-available/elros.conf <<'EOF'
+server {
+    listen 80;
+    server_name elros.K13.com;
+
+    # Forward to Laravel workers
+    location / {
+        proxy_pass http://kesatria_numenor;
+
+        # headers penting untuk app di belakang proxy
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # opsional: timeout ringan
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+    }
+
+    error_log /var/log/nginx/error.log;
+    access_log /var/log/nginx/access.log;
+}
+EOF
+
+ln -sf /etc/nginx/sites-available/elros.conf /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+
+# Restart Nginx tanpa systemctl
+pkill nginx 2>/dev/null || true
+nginx -t
+nginx
+
+echo "[OK] Elros reverse proxy aktif di http://elros.K13.com → kesatria_numenor (RR)"
+```
+
+Cek cepat dari client:
+```bash
+# Halaman root (harus 200 OK)
+lynx http://elros.K13.com
+
+# Endpoint API di balik proxy (harus 200 + JSON)
+curl -i http://elros.K13.com/api/airing
+```
 
 ### Soal 11
 Musuh mencoba menguji kekuatan pertahanan Númenor. Dari node client, luncurkan serangan benchmark (ab) ke elros.<xxxx>.com/api/airing/:
